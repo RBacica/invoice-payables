@@ -69,6 +69,7 @@ tbody tr:hover{background:rgba(0,212,255,0.03)}
 
 /* Checkbox styling */
 td input[type=checkbox]{width:18px;height:18px;accent-color:#00cc88;cursor:pointer}
+.supplier-group-header td input[type=checkbox]{width:18px;height:18px;accent-color:#b388ff;cursor:pointer}
 
 /* Invoice Due */
 .due-date{white-space:nowrap;font-weight:600}
@@ -109,6 +110,25 @@ td input[type=checkbox]{width:18px;height:18px;accent-color:#00cc88;cursor:point
   .settings-table select{width:100%}
   .settings-table input[type=number]{width:100%}
 }
+
+/* Print report overlay */
+.print-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;color:#000;z-index:9999;overflow-y:auto;padding:30px 40px;display:none}
+.print-overlay.open{display:block}
+.print-overlay h1{color:#000;margin-bottom:6px;font-size:1.6rem}
+.print-overlay .print-subtitle{color:#555;margin-bottom:20px;font-size:0.9rem}
+.print-overlay .print-section{margin-bottom:24px}
+.print-overlay .print-section h2{color:#1a1a2e;border-bottom:2px solid #333;padding-bottom:6px;margin-bottom:12px;font-size:1.1rem}
+.print-overlay table{width:100%;border-collapse:collapse;margin-bottom:8px}
+.print-overlay th{background:#f0f0f0;color:#333;padding:6px 10px;text-align:left;font-size:0.75rem;text-transform:uppercase;border-bottom:2px solid #ccc}
+.print-overlay td{padding:5px 10px;border-bottom:1px solid #ddd;font-size:0.8rem}
+.print-overlay .print-amount{text-align:right;font-weight:600}
+.print-overlay .print-total-row td{font-weight:700;border-top:2px solid #333;padding-top:8px}
+.print-overlay .print-grand-total{font-size:1.1rem;font-weight:700;text-align:right;margin-top:16px;padding-top:12px;border-top:3px double #333}
+.print-overlay .print-actions{margin-bottom:20px;display:flex;gap:10px}
+.print-overlay .print-actions button{padding:8px 20px;border:none;border-radius:6px;cursor:pointer;font-size:0.9rem;font-weight:600}
+.btn-print{background:linear-gradient(135deg,#3a7bd5,#2d5aa3);color:#fff}
+.btn-print:hover{transform:translateY(-1px)}
+@media print{body>*:not(.print-overlay){display:none!important}.print-overlay{display:block!important;position:static;padding:20px;background:#fff;color:#000}.print-actions{display:none!important}}
 </style>
 </head>
 <body>
@@ -156,6 +176,7 @@ td input[type=checkbox]{width:18px;height:18px;accent-color:#00cc88;cursor:point
     <button class="btn btn-select" onclick="selectAll()">☑ Select All</button>
     <button class="btn btn-clear" onclick="clearAll()">☐ Clear All</button>
     <button class="btn btn-export" onclick="exportPayables()">📥 Export Payables</button>
+    <button class="btn btn-print" onclick="printDueReport()">🖨️ Print Due Report</button>
   </div>
 
   <div id="invoice-table-area"><div class="empty-state"><div class="icon">📅</div><p>Select a month and click Search to view invoices</p></div></div>
@@ -170,6 +191,15 @@ td input[type=checkbox]{width:18px;height:18px;accent-color:#00cc88;cursor:point
   <button class="btn-bulk-save" onclick="bulkSaveSettings()" style="display:none" id="btn-bulk-save">💾 Bulk Save All</button>
   <div class="settings-count" id="settings-count"></div>
 </div>
+</div><!-- .container -->
+
+<!-- Print Report Overlay -->
+<div id="print-overlay" class="print-overlay">
+  <div class="print-actions">
+    <button onclick="window.print()">🖨️ Print</button>
+    <button onclick="closePrintReport()" style="background:#666;color:#fff">✖ Close</button>
+  </div>
+  <div id="print-content"></div>
 </div>
 
 <script>
@@ -321,8 +351,8 @@ function renderInvoices() {
     const groupCombined = groupTotal + groupTax;
     const groupCount = group.length;
 
-    html += `<tr class="supplier-group-header">
-      <td></td>
+    html += `<tr class="supplier-group-header" data-supplier-code="${escapeHtml(code)}">
+      <td><input type="checkbox" onchange="toggleSupplierSelect('${escapeHtml(code)}', this)"></td>
       <td colspan="2"><span class="supplier-name">${escapeHtml(supplierLabel)}</span> — ${groupCount} invoice${groupCount !== 1 ? 's' : ''}</td>
       <td colspan="2"></td>
       <td></td>
@@ -338,7 +368,7 @@ function renderInvoices() {
       const checked = selectedSet.has(key) ? 'checked' : '';
       const dueClass = inv.due_date ? (inv.due_date < todayStr() ? 'due-date past' : 'due-date') : 'due-date unconfigured';
       const unconfNote = inv.due_date && !isConfigured(inv.supplier_code) ? ' *' : '';
-      html += `<tr class="${checked ? 'selected-row' : ''}" data-row="${rowIdx}">
+      html += `<tr class="${checked ? 'selected-row' : ''}" data-row="${rowIdx}" data-invkey="${escapeHtml(key)}">
         <td><input type="checkbox" ${checked} onchange="toggleSelect('${escapeHtml(key)}', this)"></td>
         <td>${escapeHtml(inv.branch)}</td>
         <td>${escapeHtml(inv.supplier_code)}</td>
@@ -359,6 +389,7 @@ function renderInvoices() {
     '<div style="margin-top:8px;color:#888;font-size:0.8rem">* Supplier has no configured terms — using default EOM + 20 days</div>';
 
   document.getElementById('invoice-table-area').innerHTML = html;
+  updateSupplierCheckboxes();
 }
 
 function updateSelectedTotal() {
@@ -381,6 +412,7 @@ function toggleSelect(key, el) {
   const tr = el.closest('tr');
   if (tr) tr.classList.toggle('selected-row', el.checked);
   updateSelectedTotal();
+  updateSupplierCheckboxes();
 }
 
 function selectAll() {
@@ -388,6 +420,7 @@ function selectAll() {
   document.querySelectorAll('tbody input[type=checkbox]').forEach(cb => cb.checked = true);
   document.querySelectorAll('tbody tr').forEach(tr => tr.classList.add('selected-row'));
   updateSelectedTotal();
+  updateSupplierCheckboxes();
 }
 
 function clearAll() {
@@ -395,6 +428,7 @@ function clearAll() {
   document.querySelectorAll('tbody input[type=checkbox]').forEach(cb => cb.checked = false);
   document.querySelectorAll('tbody tr').forEach(tr => tr.classList.remove('selected-row'));
   updateSelectedTotal();
+  updateSupplierCheckboxes();
 }
 
 function todayStr() {
@@ -442,6 +476,120 @@ async function exportPayables() {
     document.getElementById('search-status').innerHTML =
       `<div class="error-msg">❌ Network error: ${escapeHtml(e.message)}</div>`;
   }
+}
+
+// ── Supplier Select / Deselect All ──
+function toggleSupplierSelect(code, el) {
+  const checked = el.checked;
+  const group = invoices.filter(inv => inv.supplier_code === code);
+  group.forEach(inv => {
+    const key = invKey(inv);
+    if (checked) selectedSet.add(key);
+    else selectedSet.delete(key);
+    const row = document.querySelector(`tbody tr[data-invkey="${escapeHtml(key)}"]`);
+    if (row) {
+      const cb = row.querySelector('input[type=checkbox]');
+      if (cb) cb.checked = checked;
+      row.classList.toggle('selected-row', checked);
+    }
+  });
+  updateSelectedTotal();
+}
+
+function updateSupplierCheckboxes() {
+  // Group invoices by supplier
+  const groups = {};
+  invoices.forEach(inv => {
+    if (!groups[inv.supplier_code]) groups[inv.supplier_code] = [];
+    groups[inv.supplier_code].push(inv);
+  });
+  // Set each supplier header checkbox based on selection state
+  Object.keys(groups).forEach(code => {
+    const group = groups[code];
+    const allSelected = group.every(inv => selectedSet.has(invKey(inv)));
+    const someSelected = group.some(inv => selectedSet.has(invKey(inv)));
+    const headerRow = document.querySelector(`.supplier-group-header[data-supplier-code="${escapeHtml(code)}"]`);
+    if (headerRow) {
+      const cb = headerRow.querySelector('input[type=checkbox]');
+      if (cb) {
+        cb.checked = allSelected;
+        cb.indeterminate = someSelected && !allSelected;
+      }
+    }
+  });
+}
+
+// ── Print Due Report ──
+function printDueReport() {
+  if (invoices.length === 0) { alert('No invoices to print. Search for a month first.'); return; }
+
+  const groups = {};
+  invoices.forEach(inv => {
+    const due = inv.due_date || 'No Date';
+    const monthKey = due.substring(0, 7); // YYYY-MM
+    if (!groups[monthKey]) groups[monthKey] = [];
+    groups[monthKey].push(inv);
+  });
+
+  const sortedMonths = Object.keys(groups).sort();
+
+  let html = '<h1>📋 Payables Due Report</h1>';
+  html += `<p class="print-subtitle">${invoices.length} invoices • Generated ${new Date().toLocaleDateString('en-NZ', { year: 'numeric', month: 'long', day: 'numeric' })}</p>`;
+
+  sortedMonths.forEach(monthKey => {
+    const group = groups[monthKey];
+    const [y, m] = monthKey.split('-');
+    const monthName = new Date(parseInt(y), parseInt(m)-1).toLocaleDateString('en-NZ', { month: 'long', year: 'numeric' });
+    const groupTotal = group.reduce((s, i) => s + (i.invoice_amount || 0), 0);
+    const groupCombined = group.reduce((s, i) => s + (i.invoice_amount || 0) + (i.tax_amount || 0), 0);
+    const selected = group.filter(inv => selectedSet.has(invKey(inv))).length;
+
+    html += `<div class="print-section">
+      <h2>${monthName} — Due This Month (${group.length} invoices, ${selected} selected)</h2>
+      <table>
+        <thead><tr>
+          <th>Supplier</th><th>Invoice#</th><th>Date</th><th>TransactionID</th>
+          <th>Amount</th><th>Tax</th><th>Total</th><th>Due Date</th><th>Status</th>
+        </tr></thead>
+        <tbody>`;
+
+    group.forEach(inv => {
+      const selected = selectedSet.has(invKey(inv));
+      const total = (inv.invoice_amount || 0) + (inv.tax_amount || 0);
+      const label = supplierLabelMap[inv.supplier_code] || inv.supplier_code;
+      html += `<tr>
+        <td>${escapeHtml(label)}</td>
+        <td>${escapeHtml(inv.invoice_number)}</td>
+        <td>${escapeHtml(inv.invoice_date ? inv.invoice_date.substring(0,10) : '')}</td>
+        <td>${escapeHtml(inv.description)}</td>
+        <td class="print-amount">$${(inv.invoice_amount || 0).toFixed(2)}</td>
+        <td class="print-amount">$${(inv.tax_amount || 0).toFixed(2)}</td>
+        <td class="print-amount">$${total.toFixed(2)}</td>
+        <td>${escapeHtml(inv.due_date)}</td>
+        <td>${selected ? 'To Pay ✓' : ''}</td>
+      </tr>`;
+    });
+
+    html += `<tr class="print-total-row">
+        <td colspan="4"><strong>${monthName} Total</strong></td>
+        <td class="print-amount">$${groupTotal.toFixed(2)}</td>
+        <td class="print-amount">$${(groupCombined - groupTotal).toFixed(2)}</td>
+        <td class="print-amount">$${groupCombined.toFixed(2)}</td>
+        <td colspan="2"></td>
+      </tr></tbody></table></div>`;
+  });
+
+  // Grand total
+  const grandTotal = invoices.reduce((s, i) => s + (i.invoice_amount || 0), 0);
+  const grandCombined = invoices.reduce((s, i) => s + (i.invoice_amount || 0) + (i.tax_amount || 0), 0);
+  html += `<div class="print-grand-total">Grand Total: $${grandTotal.toFixed(2)} (inc Tax: $${grandCombined.toFixed(2)})</div>`;
+
+  document.getElementById('print-content').innerHTML = html;
+  document.getElementById('print-overlay').classList.add('open');
+}
+
+function closePrintReport() {
+  document.getElementById('print-overlay').classList.remove('open');
 }
 
 // ── Settings ──
