@@ -128,6 +128,12 @@ td input[type=checkbox]{width:18px;height:18px;accent-color:#00cc88;cursor:point
 .print-overlay .print-actions button{padding:8px 20px;border:none;border-radius:6px;cursor:pointer;font-size:0.9rem;font-weight:600}
 .btn-print{background:linear-gradient(135deg,#3a7bd5,#2d5aa3);color:#fff}
 .btn-print:hover{transform:translateY(-1px)}
+
+/* Group toggle */
+.group-toggle{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#16213e;border-radius:8px;border:1px solid #0f3460;cursor:pointer;transition:all 0.2s;font-size:0.82rem;color:#aaa;user-select:none}
+.group-toggle:hover{border-color:#b388ff;color:#e0e0e0}
+.group-toggle.active{background:#1e1530;border-color:#b388ff;color:#b388ff}
+.group-toggle input[type=checkbox]{width:16px;height:16px;accent-color:#b388ff;cursor:pointer}
 @media print{body>*:not(.print-overlay){display:none!important}.print-overlay{display:block!important;position:static;padding:20px;background:#fff;color:#000}.print-actions{display:none!important}}
 </style>
 </head>
@@ -177,6 +183,9 @@ td input[type=checkbox]{width:18px;height:18px;accent-color:#00cc88;cursor:point
     <button class="btn btn-clear" onclick="clearAll()">☐ Clear All</button>
     <button class="btn btn-export" onclick="exportPayables()">📥 Export Payables</button>
     <button class="btn btn-print" onclick="printDueReport()">🖨️ Print Due Report</button>
+    <label class="group-toggle active" id="group-toggle">
+      <input type="checkbox" checked onchange="toggleGroupBy(this)"> Group by Supplier
+    </label>
   </div>
 
   <div id="invoice-table-area"><div class="empty-state"><div class="icon">📅</div><p>Select a month and click Search to view invoices</p></div></div>
@@ -208,6 +217,7 @@ let invoices = [];
 let selectedSet = new Set();
 let supplierEntries = [];
 let supplierLabelMap = {};
+let groupBySupplier = true;
 
 // ── Init ──
 (function init() {
@@ -339,57 +349,68 @@ function renderInvoices() {
     '</tr></thead><tbody>';
 
   let rowIdx = 0;
-  const supplierCodes = Object.keys(groups).sort();
+  const supplierCodes = groupBySupplier ? Object.keys(groups).sort() : [];
 
-  supplierCodes.forEach(code => {
-    const group = groups[code];
-    const supplierLabel = supplierLabelMap[code] || code;
-
-    // Supplier header row — totals for this supplier
-    const groupTotal = group.reduce((s, i) => s + (i.invoice_amount || 0), 0);
-    const groupTax = group.reduce((s, i) => s + (i.tax_amount || 0), 0);
-    const groupCombined = groupTotal + groupTax;
-    const groupCount = group.length;
-
-    html += `<tr class="supplier-group-header" data-supplier-code="${escapeHtml(code)}">
-      <td><input type="checkbox" onchange="toggleSupplierSelect('${escapeHtml(code)}', this)"></td>
-      <td colspan="2"><span class="supplier-name">${escapeHtml(supplierLabel)}</span> — ${groupCount} invoice${groupCount !== 1 ? 's' : ''}</td>
-      <td colspan="2"></td>
-      <td></td>
-      <td class="supplier-total">$${groupTotal.toFixed(2)}</td>
-      <td class="supplier-total">$${groupTax.toFixed(2)}</td>
-      <td class="supplier-total">$${groupCombined.toFixed(2)}</td>
-      <td colspan="2"></td>
+  // Local helper to render a single invoice row
+  const addInvoiceRow = (inv) => {
+    const key = invKey(inv);
+    const checked = selectedSet.has(key) ? 'checked' : '';
+    const dueClass = inv.due_date ? (inv.due_date < todayStr() ? 'due-date past' : 'due-date') : 'due-date unconfigured';
+    const unconfNote = inv.due_date && !isConfigured(inv.supplier_code) ? ' *' : '';
+    html += `<tr class="${checked ? 'selected-row' : ''}" data-row="${rowIdx}" data-invkey="${escapeHtml(key)}">
+      <td><input type="checkbox" ${checked} onchange="toggleSelect('${escapeHtml(key)}', this)"></td>
+      <td>${escapeHtml(inv.branch)}</td>
+      <td>${escapeHtml(inv.supplier_code)}</td>
+      <td>${escapeHtml(inv.invoice_number)}</td>
+      <td>${escapeHtml(inv.invoice_date ? inv.invoice_date.substring(0,10) : '')}</td>
+      <td>${escapeHtml(inv.description)}</td>
+      <td class="amount">$${(inv.invoice_amount || 0).toFixed(2)}</td>
+      <td class="amount">$${(inv.tax_amount || 0).toFixed(2)}</td>
+      <td class="amount">$${((inv.invoice_amount || 0) + (inv.tax_amount || 0)).toFixed(2)}</td>
+      <td>${escapeHtml(inv.po_number)}</td>
+      <td class="${dueClass}">${escapeHtml(inv.due_date)}${unconfNote}</td>
     </tr>`;
+    rowIdx++;
+  };
 
-    // Individual invoice rows under this supplier
-    group.forEach(inv => {
-      const key = invKey(inv);
-      const checked = selectedSet.has(key) ? 'checked' : '';
-      const dueClass = inv.due_date ? (inv.due_date < todayStr() ? 'due-date past' : 'due-date') : 'due-date unconfigured';
-      const unconfNote = inv.due_date && !isConfigured(inv.supplier_code) ? ' *' : '';
-      html += `<tr class="${checked ? 'selected-row' : ''}" data-row="${rowIdx}" data-invkey="${escapeHtml(key)}">
-        <td><input type="checkbox" ${checked} onchange="toggleSelect('${escapeHtml(key)}', this)"></td>
-        <td>${escapeHtml(inv.branch)}</td>
-        <td>${escapeHtml(inv.supplier_code)}</td>
-        <td>${escapeHtml(inv.invoice_number)}</td>
-        <td>${escapeHtml(inv.invoice_date ? inv.invoice_date.substring(0,10) : '')}</td>
-        <td>${escapeHtml(inv.description)}</td>
-        <td class="amount">$${(inv.invoice_amount || 0).toFixed(2)}</td>
-        <td class="amount">$${(inv.tax_amount || 0).toFixed(2)}</td>
-        <td class="amount">$${((inv.invoice_amount || 0) + (inv.tax_amount || 0)).toFixed(2)}</td>
-        <td>${escapeHtml(inv.po_number)}</td>
-        <td class="${dueClass}">${escapeHtml(inv.due_date)}${unconfNote}</td>
+  if (groupBySupplier) {
+    // ── Grouped by supplier ──
+    supplierCodes.forEach(code => {
+      const group = groups[code];
+      const supplierLabel = supplierLabelMap[code] || code;
+
+      const groupTotal = group.reduce((s, i) => s + (i.invoice_amount || 0), 0);
+      const groupTax = group.reduce((s, i) => s + (i.tax_amount || 0), 0);
+      const groupCombined = groupTotal + groupTax;
+      const groupCount = group.length;
+
+      html += `<tr class="supplier-group-header" data-supplier-code="${escapeHtml(code)}">
+        <td><input type="checkbox" onchange="toggleSupplierSelect('${escapeHtml(code)}', this)"></td>
+        <td colspan="2"><span class="supplier-name">${escapeHtml(supplierLabel)}</span> — ${groupCount} invoice${groupCount !== 1 ? 's' : ''}</td>
+        <td colspan="2"></td>
+        <td></td>
+        <td class="supplier-total">$${groupTotal.toFixed(2)}</td>
+        <td class="supplier-total">$${groupTax.toFixed(2)}</td>
+        <td class="supplier-total">$${groupCombined.toFixed(2)}</td>
+        <td colspan="2"></td>
       </tr>`;
-      rowIdx++;
+
+      group.forEach(inv => {
+        addInvoiceRow(inv);
+      });
     });
-  });
+  } else {
+    // ── Flat (ungrouped) ──
+    invoices.forEach(inv => {
+      addInvoiceRow(inv);
+    });
+  }
 
   html += '</tbody></table></div>' +
     '<div style="margin-top:8px;color:#888;font-size:0.8rem">* Supplier has no configured terms — using default EOM + 20 days</div>';
 
   document.getElementById('invoice-table-area').innerHTML = html;
-  updateSupplierCheckboxes();
+  if (groupBySupplier) updateSupplierCheckboxes();
 }
 
 function updateSelectedTotal() {
@@ -476,6 +497,13 @@ async function exportPayables() {
     document.getElementById('search-status').innerHTML =
       `<div class="error-msg">❌ Network error: ${escapeHtml(e.message)}</div>`;
   }
+}
+
+// ── Group Toggle ──
+function toggleGroupBy(el) {
+  groupBySupplier = el.checked;
+  document.getElementById('group-toggle').classList.toggle('active', groupBySupplier);
+  renderInvoices();
 }
 
 // ── Supplier Select / Deselect All ──
