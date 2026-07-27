@@ -299,22 +299,23 @@ pub fn save_payables_report(
     let mut out = String::with_capacity(rows.len() * 128 + 256);
 
     // Header
-    out.push_str("Branch\tSupplier\tInvoice#\tDate\tDescription\tAmount\tTax\tPO#\tDue Date\tStatus\n");
+    out.push_str("Branch\tSupplier\tInvoice#\tDate\tTransactionID\tAmount\tTax\tTotal\tPO#\tDue Date\tStatus\n");
     out.push_str(&format!("--- Payables Report — {} selected invoices — Generated {}\n\n",
         rows.len(), now.format("%Y-%m-%d %H:%M:%S")));
 
     // Totals
     let total_amount: f64 = rows.iter().map(|r| r.invoice_amount).sum();
     let total_tax: f64 = rows.iter().map(|r| r.tax_amount).sum();
-    out.push_str(&format!("Total Amount:\t{:.2}\nTotal Tax:\t{:.2}\n\n", total_amount, total_tax));
+    let total_combined = total_amount + total_tax;
+    out.push_str(&format!("Total Amount:\t{:.2}\nTotal Tax:\t{:.2}\nTotal (inc Tax):\t{:.2}\n\n", total_amount, total_tax, total_combined));
 
     // Data rows
     for r in rows {
         out.push_str(&format!(
-            "{}\t{}\t{}\t{}\t{}\t{:.2}\t{:.2}\t{}\t{}\tTo Pay\n",
+            "{}\t{}\t{}\t{}\t{}\t{:.2}\t{:.2}\t{:.2}\t{}\t{}\tTo Pay\n",
             r.branch, r.supplier_code, r.invoice_number, r.invoice_date,
             r.description.replace('\t', " "), r.invoice_amount, r.tax_amount,
-            r.po_number, r.due_date,
+            r.invoice_amount + r.tax_amount, r.po_number, r.due_date,
         ));
     }
 

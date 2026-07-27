@@ -304,7 +304,7 @@ function renderInvoices() {
   let html = '<div class="table-wrapper"><table><thead><tr>' +
     '<th style="width:40px">☐</th>' +
     '<th>Branch</th><th>Supplier</th><th>Invoice#</th><th>Date</th>' +
-    '<th>Description</th><th>Amount</th><th>Tax</th><th>PO#</th>' +
+    '<th>TransactionID</th><th>Amount</th><th>Tax</th><th>Total</th><th>PO#</th>' +
     '<th>Invoice Due</th>' +
     '</tr></thead><tbody>';
 
@@ -318,6 +318,7 @@ function renderInvoices() {
     // Supplier header row — totals for this supplier
     const groupTotal = group.reduce((s, i) => s + (i.invoice_amount || 0), 0);
     const groupTax = group.reduce((s, i) => s + (i.tax_amount || 0), 0);
+    const groupCombined = groupTotal + groupTax;
     const groupCount = group.length;
 
     html += `<tr class="supplier-group-header">
@@ -327,6 +328,7 @@ function renderInvoices() {
       <td></td>
       <td class="supplier-total">$${groupTotal.toFixed(2)}</td>
       <td class="supplier-total">$${groupTax.toFixed(2)}</td>
+      <td class="supplier-total">$${groupCombined.toFixed(2)}</td>
       <td colspan="2"></td>
     </tr>`;
 
@@ -345,6 +347,7 @@ function renderInvoices() {
         <td>${escapeHtml(inv.description)}</td>
         <td class="amount">$${(inv.invoice_amount || 0).toFixed(2)}</td>
         <td class="amount">$${(inv.tax_amount || 0).toFixed(2)}</td>
+        <td class="amount">$${((inv.invoice_amount || 0) + (inv.tax_amount || 0)).toFixed(2)}</td>
         <td>${escapeHtml(inv.po_number)}</td>
         <td class="${dueClass}">${escapeHtml(inv.due_date)}${unconfNote}</td>
       </tr>`;
