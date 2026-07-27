@@ -40,7 +40,7 @@ SELECT
 	[InvoiceDate],
 	[InvoiceAmount],
 	[PONumber],
-	[TaxAmount],
+	[TaxAmount1],
 	[Logged]
 FROM
 	[APInv]

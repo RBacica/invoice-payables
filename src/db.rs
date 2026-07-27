@@ -242,7 +242,7 @@ impl DbPool {
 
         let query = format!(
             "SELECT [Branch], [SupplierCode], [InvoiceNumber], [Description], \
-                    [InvoiceDate], [InvoiceAmount], [PONumber], [TaxAmount], [Logged] \
+                    [InvoiceDate], [InvoiceAmount], [PONumber], [TaxAmount1], [Logged] \
              FROM [APInv] \
              WHERE [InvoiceDate] >= '{}' AND [InvoiceDate] < '{}' {} {} \
              ORDER BY [InvoiceDate] DESC",
