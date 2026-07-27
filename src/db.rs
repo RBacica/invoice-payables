@@ -56,6 +56,12 @@ fn cell_to_string(row: &tiberius::Row, idx: usize) -> String {
     if let Ok(Some(s)) = row.try_get::<&str, _>(idx) {
         return s.trim().to_string();
     }
+    if let Ok(Some(dt)) = row.try_get::<chrono::NaiveDateTime, _>(idx) {
+        return dt.format("%Y-%m-%d %H:%M:%S").to_string();
+    }
+    if let Ok(Some(d)) = row.try_get::<chrono::NaiveDate, _>(idx) {
+        return d.format("%Y-%m-%d").to_string();
+    }
     if let Ok(Some(v)) = row.try_get::<i32, _>(idx) {
         return v.to_string();
     }
