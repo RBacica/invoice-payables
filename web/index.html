@@ -126,6 +126,8 @@ td input[type=checkbox]{width:18px;height:18px;accent-color:#00cc88;cursor:point
 .print-overlay .print-grand-total{font-size:1.1rem;font-weight:700;text-align:right;margin-top:16px;padding-top:12px;border-top:3px double #333}
 .print-overlay .print-actions{margin-bottom:20px;display:flex;gap:10px}
 .print-overlay .print-actions button{padding:8px 20px;border:none;border-radius:6px;cursor:pointer;font-size:0.9rem;font-weight:600}
+.print-overlay .print-supplier-sub{font-weight:600;color:#444;font-size:0.85rem;padding:6px 10px;background:#f5f5f5}
+.print-overlay .print-supplier-sub td{border-bottom:1px solid #ccc}
 .btn-print{background:linear-gradient(135deg,#3a7bd5,#2d5aa3);color:#fff}
 .btn-print:hover{transform:translateY(-1px)}
 
@@ -547,33 +549,41 @@ function updateSupplierCheckboxes() {
   });
 }
 
-// ── Print Due Report ──
+// ── Print Due Report (grouped by month → supplier) ──
 function printDueReport() {
   if (invoices.length === 0) { alert('No invoices to print. Search for a month first.'); return; }
 
-  const groups = {};
+  // First group by due month, then by supplier within each month
+  const monthGroups = {};
   invoices.forEach(inv => {
     const due = inv.due_date || 'No Date';
     const monthKey = due.substring(0, 7); // YYYY-MM
-    if (!groups[monthKey]) groups[monthKey] = [];
-    groups[monthKey].push(inv);
+    if (!monthGroups[monthKey]) monthGroups[monthKey] = {};
+    const code = inv.supplier_code;
+    if (!monthGroups[monthKey][code]) monthGroups[monthKey][code] = [];
+    monthGroups[monthKey][code].push(inv);
   });
 
-  const sortedMonths = Object.keys(groups).sort();
+  const sortedMonths = Object.keys(monthGroups).sort();
 
   let html = '<h1>📋 Payables Due Report</h1>';
   html += `<p class="print-subtitle">${invoices.length} invoices • Generated ${new Date().toLocaleDateString('en-NZ', { year: 'numeric', month: 'long', day: 'numeric' })}</p>`;
 
   sortedMonths.forEach(monthKey => {
-    const group = groups[monthKey];
+    const supplierGroups = monthGroups[monthKey];
     const [y, m] = monthKey.split('-');
     const monthName = new Date(parseInt(y), parseInt(m)-1).toLocaleDateString('en-NZ', { month: 'long', year: 'numeric' });
-    const groupTotal = group.reduce((s, i) => s + (i.invoice_amount || 0), 0);
-    const groupCombined = group.reduce((s, i) => s + (i.invoice_amount || 0) + (i.tax_amount || 0), 0);
-    const selected = group.filter(inv => selectedSet.has(invKey(inv))).length;
+
+    // Count all invoices in this month
+    let allInvs = [];
+    Object.values(supplierGroups).forEach(g => allInvs = allInvs.concat(g));
+
+    const monthTotal = allInvs.reduce((s, i) => s + (i.invoice_amount || 0), 0);
+    const monthCombined = allInvs.reduce((s, i) => s + (i.invoice_amount || 0) + (i.tax_amount || 0), 0);
+    const monthSelected = allInvs.filter(inv => selectedSet.has(invKey(inv))).length;
 
     html += `<div class="print-section">
-      <h2>${monthName} — Due This Month (${group.length} invoices, ${selected} selected)</h2>
+      <h2>${monthName} — Due This Month (${allInvs.length} invoices, ${monthSelected} selected)</h2>
       <table>
         <thead><tr>
           <th>Supplier</th><th>Invoice#</th><th>Date</th><th>TransactionID</th>
@@ -581,28 +591,44 @@ function printDueReport() {
         </tr></thead>
         <tbody>`;
 
-    group.forEach(inv => {
-      const selected = selectedSet.has(invKey(inv));
-      const total = (inv.invoice_amount || 0) + (inv.tax_amount || 0);
-      const label = supplierLabelMap[inv.supplier_code] || inv.supplier_code;
-      html += `<tr>
-        <td>${escapeHtml(label)}</td>
-        <td>${escapeHtml(inv.invoice_number)}</td>
-        <td>${escapeHtml(inv.invoice_date ? inv.invoice_date.substring(0,10) : '')}</td>
-        <td>${escapeHtml(inv.description)}</td>
-        <td class="print-amount">$${(inv.invoice_amount || 0).toFixed(2)}</td>
-        <td class="print-amount">$${(inv.tax_amount || 0).toFixed(2)}</td>
-        <td class="print-amount">$${total.toFixed(2)}</td>
-        <td>${escapeHtml(inv.due_date)}</td>
-        <td>${selected ? 'To Pay ✓' : ''}</td>
+    // Sort suppliers alphabetically by code
+    const sortedCodes = Object.keys(supplierGroups).sort();
+
+    sortedCodes.forEach((code, si) => {
+      const group = supplierGroups[code];
+      const label = supplierLabelMap[code] || code;
+      const supTotal = group.reduce((s, i) => s + (i.invoice_amount || 0), 0);
+      const supCombined = group.reduce((s, i) => s + (i.invoice_amount || 0) + (i.tax_amount || 0), 0);
+
+      // Supplier sub-header
+      html += `<tr class="print-supplier-sub">
+        <td colspan="9"><strong>${escapeHtml(label)}</strong> — ${group.length} invoice${group.length !== 1 ? 's' : ''} &nbsp;|&nbsp; Total: $${supTotal.toFixed(2)} (inc Tax: $${supCombined.toFixed(2)})</td>
       </tr>`;
+
+      // Individual invoices
+      group.forEach(inv => {
+        const sel = selectedSet.has(invKey(inv));
+        const total = (inv.invoice_amount || 0) + (inv.tax_amount || 0);
+        html += `<tr>
+          <td>${escapeHtml(inv.supplier_code)}</td>
+          <td>${escapeHtml(inv.invoice_number)}</td>
+          <td>${escapeHtml(inv.invoice_date ? inv.invoice_date.substring(0,10) : '')}</td>
+          <td>${escapeHtml(inv.description)}</td>
+          <td class="print-amount">$${(inv.invoice_amount || 0).toFixed(2)}</td>
+          <td class="print-amount">$${(inv.tax_amount || 0).toFixed(2)}</td>
+          <td class="print-amount">$${total.toFixed(2)}</td>
+          <td>${escapeHtml(inv.due_date)}</td>
+          <td>${sel ? 'To Pay ✓' : ''}</td>
+        </tr>`;
+      });
     });
 
+    // Month subtotal
     html += `<tr class="print-total-row">
         <td colspan="4"><strong>${monthName} Total</strong></td>
-        <td class="print-amount">$${groupTotal.toFixed(2)}</td>
-        <td class="print-amount">$${(groupCombined - groupTotal).toFixed(2)}</td>
-        <td class="print-amount">$${groupCombined.toFixed(2)}</td>
+        <td class="print-amount">$${monthTotal.toFixed(2)}</td>
+        <td class="print-amount">$${(monthCombined - monthTotal).toFixed(2)}</td>
+        <td class="print-amount">$${monthCombined.toFixed(2)}</td>
         <td colspan="2"></td>
       </tr></tbody></table></div>`;
   });
