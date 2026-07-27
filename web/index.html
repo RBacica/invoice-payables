@@ -75,6 +75,11 @@ td input[type=checkbox]{width:18px;height:18px;accent-color:#00cc88;cursor:point
 .due-date.unconfigured{font-style:italic;color:#999}
 .due-date.past{color:#ff6b6b}
 
+/* Supplier group header */
+.supplier-group-header td{background:#0f2640;padding:10px 12px;font-weight:700;font-size:0.9rem;border-top:2px solid #1a3a5e}
+.supplier-group-header .supplier-name{color:#b388ff}
+.supplier-group-header .supplier-total{color:#00cc88;text-align:right;font-size:0.95rem}
+
 /* Settings Page */
 .settings-intro{margin-bottom:16px;color:#aaa;font-size:0.9rem}
 .settings-filter{margin-bottom:16px}
@@ -172,6 +177,7 @@ td input[type=checkbox]{width:18px;height:18px;accent-color:#00cc88;cursor:point
 let invoices = [];
 let selectedSet = new Set();
 let supplierEntries = [];
+let supplierLabelMap = {};
 
 // ── Init ──
 (function init() {
@@ -223,6 +229,7 @@ async function loadSuppliers() {
     const data = await r.json();
     const sel = document.getElementById('supplier-select');
     data.forEach(s => {
+      supplierLabelMap[s.code] = s.label;
       const opt = document.createElement('option');
       opt.value = s.code; opt.textContent = s.label;
       sel.appendChild(opt);
@@ -263,7 +270,7 @@ async function searchInvoices() {
   }
 }
 
-// ── Render Invoices ──
+// ── Render Invoices (grouped by supplier) ──
 function renderInvoices() {
   document.getElementById('search-status').innerHTML = '';
 
@@ -273,6 +280,14 @@ function renderInvoices() {
     document.getElementById('search-toolbar').style.display = 'none';
     return;
   }
+
+  // Group by supplier_code
+  const groups = {};
+  invoices.forEach(inv => {
+    const code = inv.supplier_code;
+    if (!groups[code]) groups[code] = [];
+    groups[code].push(inv);
+  });
 
   document.getElementById('summary-bar').style.display = 'flex';
   document.getElementById('search-toolbar').style.display = 'flex';
@@ -285,7 +300,7 @@ function renderInvoices() {
   document.getElementById('stat-tax').textContent = '$' + tax.toFixed(2);
   updateSelectedTotal();
 
-  // Build table
+  // Build table with supplier groups
   let html = '<div class="table-wrapper"><table><thead><tr>' +
     '<th style="width:40px">☐</th>' +
     '<th>Branch</th><th>Supplier</th><th>Invoice#</th><th>Date</th>' +
@@ -293,23 +308,48 @@ function renderInvoices() {
     '<th>Invoice Due</th>' +
     '</tr></thead><tbody>';
 
-  invoices.forEach(inv => {
-    const key = invKey(inv);
-    const checked = selectedSet.has(key) ? 'checked' : '';
-    const dueClass = inv.due_date ? (inv.due_date < todayStr() ? 'due-date past' : 'due-date') : 'due-date unconfigured';
-    const unconfNote = inv.due_date && !isConfigured(inv.supplier_code) ? ' *' : '';
-    html += `<tr class="${checked ? 'selected-row' : ''}">
-      <td><input type="checkbox" ${checked} onchange="toggleSelect('${escapeHtml(key)}', this)"></td>
-      <td>${escapeHtml(inv.branch)}</td>
-      <td>${escapeHtml(inv.supplier_code)}</td>
-      <td>${escapeHtml(inv.invoice_number)}</td>
-      <td>${escapeHtml(inv.invoice_date ? inv.invoice_date.substring(0,10) : '')}</td>
-      <td>${escapeHtml(inv.description)}</td>
-      <td class="amount">$${(inv.invoice_amount || 0).toFixed(2)}</td>
-      <td class="amount">$${(inv.tax_amount || 0).toFixed(2)}</td>
-      <td>${escapeHtml(inv.po_number)}</td>
-      <td class="${dueClass}">${escapeHtml(inv.due_date)}${unconfNote}</td>
+  let rowIdx = 0;
+  const supplierCodes = Object.keys(groups).sort();
+
+  supplierCodes.forEach(code => {
+    const group = groups[code];
+    const supplierLabel = supplierLabelMap[code] || code;
+
+    // Supplier header row — totals for this supplier
+    const groupTotal = group.reduce((s, i) => s + (i.invoice_amount || 0), 0);
+    const groupTax = group.reduce((s, i) => s + (i.tax_amount || 0), 0);
+    const groupCount = group.length;
+
+    html += `<tr class="supplier-group-header">
+      <td></td>
+      <td colspan="2"><span class="supplier-name">${escapeHtml(supplierLabel)}</span> — ${groupCount} invoice${groupCount !== 1 ? 's' : ''}</td>
+      <td colspan="2"></td>
+      <td></td>
+      <td class="supplier-total">$${groupTotal.toFixed(2)}</td>
+      <td class="supplier-total">$${groupTax.toFixed(2)}</td>
+      <td colspan="2"></td>
     </tr>`;
+
+    // Individual invoice rows under this supplier
+    group.forEach(inv => {
+      const key = invKey(inv);
+      const checked = selectedSet.has(key) ? 'checked' : '';
+      const dueClass = inv.due_date ? (inv.due_date < todayStr() ? 'due-date past' : 'due-date') : 'due-date unconfigured';
+      const unconfNote = inv.due_date && !isConfigured(inv.supplier_code) ? ' *' : '';
+      html += `<tr class="${checked ? 'selected-row' : ''}" data-row="${rowIdx}">
+        <td><input type="checkbox" ${checked} onchange="toggleSelect('${escapeHtml(key)}', this)"></td>
+        <td>${escapeHtml(inv.branch)}</td>
+        <td>${escapeHtml(inv.supplier_code)}</td>
+        <td>${escapeHtml(inv.invoice_number)}</td>
+        <td>${escapeHtml(inv.invoice_date ? inv.invoice_date.substring(0,10) : '')}</td>
+        <td>${escapeHtml(inv.description)}</td>
+        <td class="amount">$${(inv.invoice_amount || 0).toFixed(2)}</td>
+        <td class="amount">$${(inv.tax_amount || 0).toFixed(2)}</td>
+        <td>${escapeHtml(inv.po_number)}</td>
+        <td class="${dueClass}">${escapeHtml(inv.due_date)}${unconfNote}</td>
+      </tr>`;
+      rowIdx++;
+    });
   });
 
   html += '</tbody></table></div>' +
@@ -334,12 +374,9 @@ function invKey(inv) {
 function toggleSelect(key, el) {
   if (el.checked) selectedSet.add(key);
   else selectedSet.delete(key);
-  const inv = invoices.find(i => invKey(i) === key);
-  if (inv) {
-    const idx = invoices.indexOf(inv);
-    const tr = document.querySelectorAll('tbody tr')[idx];
-    if (tr) tr.classList.toggle('selected-row', el.checked);
-  }
+  // Find the parent tr and toggle selected-row class
+  const tr = el.closest('tr');
+  if (tr) tr.classList.toggle('selected-row', el.checked);
   updateSelectedTotal();
 }
 
