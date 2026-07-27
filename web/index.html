@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Invoice Payables</title>
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{overscroll-behavior-y:none;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#1a1a2e;color:#e0e0e0;min-height:100vh;padding:20px}
+.container{max-width:1400px;margin:0 auto}
+h1{text-align:center;color:#00d4ff;margin-bottom:4px;font-size:1.8rem;font-weight:600;letter-spacing:1px}
+.subtitle{text-align:center;color:#888;margin-bottom:16px;font-size:0.9rem}
+
+/* Nav */
+.nav{display:flex;gap:0;margin-bottom:20px;background:#16213e;border-radius:12px 12px 0 0;border:1px solid #0f3460;overflow:hidden}
+.nav-btn{padding:12px 24px;background:none;border:none;color:#888;font-size:0.95rem;cursor:pointer;transition:all 0.2s;font-weight:600;letter-spacing:0.5px;border-bottom:3px solid transparent}
+.nav-btn:hover{color:#00d4ff;background:rgba(0,212,255,0.05)}
+.nav-btn.active{color:#00d4ff;border-bottom-color:#00d4ff;background:rgba(0,212,255,0.08)}
+
+/* Panels */
+.panel{display:none}
+.panel.active{display:block}
+
+/* Search Panel */
+.search-panel{background:#16213e;border-radius:0 0 12px 12px;padding:20px;margin-bottom:20px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;border:1px solid #0f3460;border-top:none;box-shadow:0 4px 15px rgba(0,0,0,0.3)}
+.form-group{display:flex;flex-direction:column;gap:4px;min-width:160px;flex:1}
+.form-group label{font-size:0.75rem;color:#aaa;text-transform:uppercase;letter-spacing:1px;font-weight:600}
+.form-group select,.form-group input{padding:8px 12px;border-radius:8px;border:1px solid #0f3460;background:#1a1a2e;color:#e0e0e0;font-size:0.9rem;cursor:pointer;transition:border-color 0.2s}
+.form-group select:focus,.form-group input:focus{outline:none;border-color:#00d4ff}
+.btn{padding:9px 20px;border:none;border-radius:8px;cursor:pointer;font-size:0.9rem;font-weight:600;transition:all 0.2s;letter-spacing:0.5px}
+.btn-search{background:linear-gradient(135deg,#00d4ff,#0099cc);color:#000}
+.btn-search:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,212,255,0.3)}
+.btn-export{background:linear-gradient(135deg,#00cc88,#00aa66);color:#000}
+.btn-export:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,204,136,0.3)}
+.btn-select{background:linear-gradient(135deg,#3a7bd5,#2d5aa3);color:#fff}
+.btn-select:hover{transform:translateY(-1px)}
+.btn-clear{background:linear-gradient(135deg,#666,#555);color:#fff}
+.btn-clear:hover{transform:translateY(-1px)}
+.btn:disabled{opacity:0.6;cursor:not-allowed;transform:none;box-shadow:none}
+
+/* Summary Bar */
+.summary-bar{display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.stat{background:#16213e;border-radius:8px;padding:8px 16px;border:1px solid #0f3460;flex:1;min-width:120px}
+.stat-value{font-size:1.2rem;font-weight:700;color:#00d4ff}
+.stat-label{font-size:0.7rem;color:#888;text-transform:uppercase;letter-spacing:1px}
+.stat-value.selected{color:#00cc88}
+
+/* Toolbar */
+.toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+
+/* Table */
+.table-wrapper{overflow-x:auto;border-radius:12px;border:1px solid #0f3460;box-shadow:0 4px 15px rgba(0,0,0,0.3)}
+table{width:100%;border-collapse:collapse}
+thead{background:linear-gradient(135deg,#0f3460,#16213e)}
+th{padding:10px 12px;text-align:left;font-size:0.75rem;text-transform:uppercase;letter-spacing:1px;color:#00d4ff;font-weight:600;position:sticky;top:0;white-space:nowrap}
+td{padding:8px 12px;border-top:1px solid #0f3460;font-size:0.85rem}
+tbody tr:hover{background:rgba(0,212,255,0.03)}
+.upc{font-family:'Courier New',monospace;color:#00d4ff}
+.amount{text-align:right;font-weight:600;white-space:nowrap}
+.selected-row{background:rgba(0,204,136,0.06)!important}
+.loading{text-align:center;padding:40px;color:#00d4ff}
+.spinner{display:inline-block;width:24px;height:24px;border:3px solid rgba(0,212,255,0.2);border-top-color:#00d4ff;border-radius:50%;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty-state{text-align:center;padding:60px 20px;color:#666}
+.empty-state .icon{font-size:2.5rem;margin-bottom:12px}
+.error-msg{background:#2d1520;border:1px solid #ff6b6b;color:#ff6b6b;padding:10px 16px;border-radius:8px;margin-bottom:12px}
+.success-msg{background:#152d20;border:1px solid #00cc88;color:#00cc88;padding:10px 16px;border-radius:8px;margin-bottom:12px}
+
+/* Checkbox styling */
+td input[type=checkbox]{width:18px;height:18px;accent-color:#00cc88;cursor:pointer}
+
+/* Invoice Due */
+.due-date{white-space:nowrap;font-weight:600}
+.due-date.unconfigured{font-style:italic;color:#999}
+.due-date.past{color:#ff6b6b}
+
+/* Settings Page */
+.settings-intro{margin-bottom:16px;color:#aaa;font-size:0.9rem}
+.settings-filter{margin-bottom:16px}
+.settings-filter input{width:100%;max-width:400px;padding:8px 14px;border-radius:8px;border:1px solid #0f3460;background:#1a1a2e;color:#e0e0e0;font-size:0.9rem}
+.settings-filter input:focus{outline:none;border-color:#00d4ff}
+.settings-table{width:100%;border-collapse:collapse}
+.settings-table th{padding:10px 12px;text-align:left;font-size:0.75rem;text-transform:uppercase;letter-spacing:1px;color:#00d4ff;font-weight:600;border-bottom:2px solid #0f3460}
+.settings-table td{padding:10px 12px;border-bottom:1px solid #0f3460;font-size:0.85rem;vertical-align:middle}
+.settings-table select{padding:6px 10px;border-radius:6px;border:1px solid #0f3460;background:#1a1a2e;color:#e0e0e0;font-size:0.85rem;cursor:pointer}
+.settings-table select:focus{outline:none;border-color:#b388ff}
+.settings-table input[type=number]{width:80px;padding:6px 10px;border-radius:6px;border:1px solid #0f3460;background:#1a1a2e;color:#e0e0e0;font-size:0.85rem;text-align:center}
+.settings-table input[type=number]:focus{outline:none;border-color:#b388ff}
+.not-set{color:#888;font-style:italic;font-size:0.8rem;margin-left:6px}
+.btn-save-supplier{background:#7c4dff;color:#fff;padding:5px 14px;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:600;transition:all 0.2s}
+.btn-save-supplier:hover{filter:brightness(1.15)}
+.btn-save-supplier.saved{background:#00cc88}
+.btn-bulk-save{background:linear-gradient(135deg,#7c4dff,#651fff);color:#fff;padding:10px 24px;border:none;border-radius:8px;cursor:pointer;font-size:0.9rem;font-weight:600;margin-top:16px;transition:all 0.2s}
+.btn-bulk-save:hover{filter:brightness(1.1);transform:translateY(-1px)}
+.settings-count{color:#888;font-size:0.8rem;margin-top:8px}
+
+/* Mobile */
+@media(max-width:768px){
+  .search-panel{flex-direction:column}
+  .summary-bar{flex-direction:column}
+  .stat{min-width:auto}
+  .nav-btn{padding:10px 14px;font-size:0.85rem}
+  .settings-table select{width:100%}
+  .settings-table input[type=number]{width:100%}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>📋 Invoice Payables</h1>
+<p class="subtitle">Review monthly invoices & determine what to pay</p>
+
+<div class="nav">
+  <button class="nav-btn active" data-view="search" onclick="switchView('search')">🔍 Invoice Search</button>
+  <button class="nav-btn" data-view="settings" onclick="switchView('settings')">⚙ Settings</button>
+</div>
+
+<!-- ─── INVOICE SEARCH ─── -->
+<div id="panel-search" class="panel active">
+  <div class="search-panel">
+    <div class="form-group">
+      <label>Month</label>
+      <select id="month-select"><option value="1">January</option><option value="2">February</option><option value="3">March</option><option value="4">April</option><option value="5">May</option><option value="6">June</option><option value="7">July</option><option value="8">August</option><option value="9">September</option><option value="10">October</option><option value="11">November</option><option value="12">December</option></select>
+    </div>
+    <div class="form-group">
+      <label>Year</label>
+      <select id="year-select"></select>
+    </div>
+    <div class="form-group">
+      <label>Branch</label>
+      <select id="branch-select"><option value="ALL">All Branches</option></select>
+    </div>
+    <div class="form-group">
+      <label>Supplier</label>
+      <select id="supplier-select"><option value="ALL">All Suppliers</option></select>
+    </div>
+    <button class="btn btn-search" onclick="searchInvoices()">🔍 Search</button>
+  </div>
+
+  <div id="search-status"></div>
+
+  <div class="summary-bar" id="summary-bar" style="display:none">
+    <div class="stat"><div class="stat-value" id="stat-count">0</div><div class="stat-label">Invoices</div></div>
+    <div class="stat"><div class="stat-value" id="stat-total">$0.00</div><div class="stat-label">Total Amount</div></div>
+    <div class="stat"><div class="stat-value" id="stat-tax">$0.00</div><div class="stat-label">Total Tax</div></div>
+    <div class="stat"><div class="stat-value selected" id="stat-selected">$0.00</div><div class="stat-label">Selected</div></div>
+  </div>
+
+  <div class="toolbar" id="search-toolbar" style="display:none">
+    <button class="btn btn-select" onclick="selectAll()">☑ Select All</button>
+    <button class="btn btn-clear" onclick="clearAll()">☐ Clear All</button>
+    <button class="btn btn-export" onclick="exportPayables()">📥 Export Payables</button>
+  </div>
+
+  <div id="invoice-table-area"><div class="empty-state"><div class="icon">📅</div><p>Select a month and click Search to view invoices</p></div></div>
+</div>
+
+<!-- ─── SETTINGS ─── -->
+<div id="panel-settings" class="panel">
+  <p class="settings-intro">Configure payment terms for each supplier. Unconfigured suppliers default to <strong>EOM + 20 days</strong>.</p>
+  <div class="settings-filter"><input type="text" id="supplier-filter-input" placeholder="Filter suppliers..." oninput="filterSettings()"></div>
+  <div id="settings-status"></div>
+  <div id="settings-table-area"><div class="loading"><div class="spinner"></div> Loading suppliers...</div></div>
+  <button class="btn-bulk-save" onclick="bulkSaveSettings()" style="display:none" id="btn-bulk-save">💾 Bulk Save All</button>
+  <div class="settings-count" id="settings-count"></div>
+</div>
+</div>
+
+<script>
+// ── State ──
+let invoices = [];
+let selectedSet = new Set();
+let supplierEntries = [];
+
+// ── Init ──
+(function init() {
+  const now = new Date();
+  // Default to previous month
+  let prevMonth = now.getMonth(); // 0-indexed
+  let prevYear = now.getFullYear();
+  if (prevMonth === 0) { prevMonth = 12; prevYear--; }
+  document.getElementById('month-select').value = prevMonth;
+
+  // Year select: current - 5 to current + 1
+  const yearSel = document.getElementById('year-select');
+  for (let y = now.getFullYear() - 5; y <= now.getFullYear() + 1; y++) {
+    const opt = document.createElement('option');
+    opt.value = y; opt.textContent = y;
+    if (y === prevYear) opt.selected = true;
+    yearSel.appendChild(opt);
+  }
+
+  loadBranches();
+  loadSuppliers();
+})();
+
+// ── View Switching ──
+function switchView(view) {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + view));
+  if (view === 'settings') loadSettings();
+}
+
+// ── Load Branches ──
+async function loadBranches() {
+  try {
+    const r = await fetch('/api/branches');
+    const data = await r.json();
+    const sel = document.getElementById('branch-select');
+    data.forEach(b => {
+      const opt = document.createElement('option');
+      opt.value = b.id; opt.textContent = b.name;
+      sel.appendChild(opt);
+    });
+  } catch(e) { console.error('Failed to load branches:', e); }
+}
+
+// ── Load Suppliers (for filter) ──
+async function loadSuppliers() {
+  try {
+    const r = await fetch('/api/suppliers');
+    const data = await r.json();
+    const sel = document.getElementById('supplier-select');
+    data.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.code; opt.textContent = s.label;
+      sel.appendChild(opt);
+    });
+  } catch(e) { console.error('Failed to load suppliers:', e); }
+}
+
+// ── Search Invoices ──
+async function searchInvoices() {
+  const month = parseInt(document.getElementById('month-select').value);
+  const year = parseInt(document.getElementById('year-select').value);
+  const branch = document.getElementById('branch-select').value;
+  const supplier = document.getElementById('supplier-select').value;
+
+  // Build date range: first of month to first of next month
+  const from = `${year}-${String(month).padStart(2,'0')}-01`;
+  const toMonth = month === 12 ? 1 : month + 1;
+  const toYear = month === 12 ? year + 1 : year;
+  const to = `${toYear}-${String(toMonth).padStart(2,'0')}-01`;
+
+  document.getElementById('search-status').innerHTML = '<div class="loading"><div class="spinner"></div> Loading invoices...</div>';
+  document.getElementById('summary-bar').style.display = 'none';
+  document.getElementById('search-toolbar').style.display = 'none';
+
+  try {
+    const url = `/api/invoices?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&branch=${encodeURIComponent(branch)}&supplier=${encodeURIComponent(supplier)}`;
+    const r = await fetch(url);
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.error || 'Server error');
+    }
+    invoices = await r.json();
+    selectedSet = new Set();
+    renderInvoices();
+  } catch(e) {
+    document.getElementById('search-status').innerHTML = `<div class="error-msg">❌ ${escapeHtml(e.message)}</div>`;
+    document.getElementById('invoice-table-area').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>Could not load invoices</p></div>';
+  }
+}
+
+// ── Render Invoices ──
+function renderInvoices() {
+  document.getElementById('search-status').innerHTML = '';
+
+  if (invoices.length === 0) {
+    document.getElementById('invoice-table-area').innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>No invoices found for this period</p></div>';
+    document.getElementById('summary-bar').style.display = 'none';
+    document.getElementById('search-toolbar').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('summary-bar').style.display = 'flex';
+  document.getElementById('search-toolbar').style.display = 'flex';
+
+  // Update stats
+  const total = invoices.reduce((s, i) => s + (i.invoice_amount || 0), 0);
+  const tax = invoices.reduce((s, i) => s + (i.tax_amount || 0), 0);
+  document.getElementById('stat-count').textContent = invoices.length;
+  document.getElementById('stat-total').textContent = '$' + total.toFixed(2);
+  document.getElementById('stat-tax').textContent = '$' + tax.toFixed(2);
+  updateSelectedTotal();
+
+  // Build table
+  let html = '<div class="table-wrapper"><table><thead><tr>' +
+    '<th style="width:40px">☐</th>' +
+    '<th>Branch</th><th>Supplier</th><th>Invoice#</th><th>Date</th>' +
+    '<th>Description</th><th>Amount</th><th>Tax</th><th>PO#</th>' +
+    '<th>Invoice Due</th>' +
+    '</tr></thead><tbody>';
+
+  invoices.forEach(inv => {
+    const key = invKey(inv);
+    const checked = selectedSet.has(key) ? 'checked' : '';
+    const dueClass = inv.due_date ? (inv.due_date < todayStr() ? 'due-date past' : 'due-date') : 'due-date unconfigured';
+    const unconfNote = inv.due_date && !isConfigured(inv.supplier_code) ? ' *' : '';
+    html += `<tr class="${checked ? 'selected-row' : ''}">
+      <td><input type="checkbox" ${checked} onchange="toggleSelect('${escapeHtml(key)}', this)"></td>
+      <td>${escapeHtml(inv.branch)}</td>
+      <td>${escapeHtml(inv.supplier_code)}</td>
+      <td>${escapeHtml(inv.invoice_number)}</td>
+      <td>${escapeHtml(inv.invoice_date ? inv.invoice_date.substring(0,10) : '')}</td>
+      <td>${escapeHtml(inv.description)}</td>
+      <td class="amount">$${(inv.invoice_amount || 0).toFixed(2)}</td>
+      <td class="amount">$${(inv.tax_amount || 0).toFixed(2)}</td>
+      <td>${escapeHtml(inv.po_number)}</td>
+      <td class="${dueClass}">${escapeHtml(inv.due_date)}${unconfNote}</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table></div>' +
+    '<div style="margin-top:8px;color:#888;font-size:0.8rem">* Supplier has no configured terms — using default EOM + 20 days</div>';
+
+  document.getElementById('invoice-table-area').innerHTML = html;
+}
+
+function updateSelectedTotal() {
+  let total = 0;
+  selectedSet.forEach(key => {
+    const inv = invoices.find(i => invKey(i) === key);
+    if (inv) total += (inv.invoice_amount || 0);
+  });
+  document.getElementById('stat-selected').textContent = '$' + total.toFixed(2);
+}
+
+function invKey(inv) {
+  return `${inv.branch}|${inv.supplier_code}|${inv.invoice_number}`;
+}
+
+function toggleSelect(key, el) {
+  if (el.checked) selectedSet.add(key);
+  else selectedSet.delete(key);
+  const inv = invoices.find(i => invKey(i) === key);
+  if (inv) {
+    const idx = invoices.indexOf(inv);
+    const tr = document.querySelectorAll('tbody tr')[idx];
+    if (tr) tr.classList.toggle('selected-row', el.checked);
+  }
+  updateSelectedTotal();
+}
+
+function selectAll() {
+  invoices.forEach(inv => selectedSet.add(invKey(inv)));
+  document.querySelectorAll('tbody input[type=checkbox]').forEach(cb => cb.checked = true);
+  document.querySelectorAll('tbody tr').forEach(tr => tr.classList.add('selected-row'));
+  updateSelectedTotal();
+}
+
+function clearAll() {
+  selectedSet.clear();
+  document.querySelectorAll('tbody input[type=checkbox]').forEach(cb => cb.checked = false);
+  document.querySelectorAll('tbody tr').forEach(tr => tr.classList.remove('selected-row'));
+  updateSelectedTotal();
+}
+
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function isConfigured(supplierCode) {
+  const entry = supplierEntries.find(e => e.code === supplierCode);
+  return entry ? entry.configured : false;
+}
+
+// ── Export ──
+async function exportPayables() {
+  if (selectedSet.size === 0) { alert('No invoices selected. Check the ones you want to pay and try again.'); return; }
+
+  const rows = invoices.filter(inv => selectedSet.has(invKey(inv))).map(inv => ({
+    branch: inv.branch,
+    supplier_code: inv.supplier_code,
+    invoice_number: inv.invoice_number,
+    description: inv.description,
+    invoice_date: inv.invoice_date,
+    invoice_amount: inv.invoice_amount,
+    po_number: inv.po_number,
+    tax_amount: inv.tax_amount,
+    due_date: inv.due_date,
+    selected: true,
+  }));
+
+  try {
+    const r = await fetch('/api/save', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ rows }),
+    });
+    const result = await r.json();
+    if (r.ok) {
+      document.getElementById('search-status').innerHTML =
+        `<div class="success-msg">✅ ${escapeHtml(result.message)} — file saved</div>`;
+    } else {
+      document.getElementById('search-status').innerHTML =
+        `<div class="error-msg">❌ ${escapeHtml(result.message || 'Save failed')}</div>`;
+    }
+  } catch(e) {
+    document.getElementById('search-status').innerHTML =
+      `<div class="error-msg">❌ Network error: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+// ── Settings ──
+async function loadSettings() {
+  document.getElementById('settings-table-area').innerHTML = '<div class="loading"><div class="spinner"></div> Loading suppliers...</div>';
+  document.getElementById('settings-status').innerHTML = '';
+  document.getElementById('btn-bulk-save').style.display = 'none';
+
+  try {
+    const r = await fetch('/api/supplier-config');
+    supplierEntries = await r.json();
+    renderSettings();
+  } catch(e) {
+    document.getElementById('settings-table-area').innerHTML =
+      `<div class="error-msg">❌ Failed to load supplier config: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderSettings() {
+  const filter = (document.getElementById('supplier-filter-input').value || '').toLowerCase();
+  const filtered = supplierEntries.filter(e =>
+    e.code.toLowerCase().includes(filter) || e.label.toLowerCase().includes(filter)
+  );
+
+  document.getElementById('settings-count').textContent = `Showing ${filtered.length} of ${supplierEntries.length} suppliers`;
+  document.getElementById('btn-bulk-save').style.display = supplierEntries.length > 0 ? 'inline-block' : 'none';
+
+  let html = '<div class="table-wrapper"><table class="settings-table"><thead><tr>' +
+    '<th>Code</th><th>Supplier Name</th><th>Term Type</th><th>Days</th><th>Actions</th>' +
+    '</tr></thead><tbody>';
+
+  filtered.forEach(entry => {
+    const isDefault = !entry.configured;
+    const notSetHtml = isDefault ? '<span class="not-set">(Not Set)</span>' : '';
+    html += `<tr id="settings-row-${entry.code}">
+      <td><strong>${escapeHtml(entry.code)}</strong></td>
+      <td>${escapeHtml(entry.label)}</td>
+      <td>
+        <select id="term-type-${entry.code}" onchange="markUnsaved('${entry.code}')">
+          <option value="EOM" ${entry.term_type === 'EOM' ? 'selected' : ''}>End of Month</option>
+          <option value="NetDays" ${entry.term_type === 'NetDays' ? 'selected' : ''}>Net Days</option>
+        </select>
+        ${notSetHtml}
+      </td>
+      <td><input type="number" id="term-days-${entry.code}" value="${entry.term_days}" min="0" max="999" onchange="markUnsaved('${entry.code}')"></td>
+      <td><button class="btn-save-supplier" id="btn-${entry.code}" onclick="saveOneSetting('${entry.code}')">Save</button></td>
+    </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+  document.getElementById('settings-table-area').innerHTML = html;
+}
+
+function markUnsaved(code) {
+  const btn = document.getElementById('btn-' + code);
+  if (btn) { btn.textContent = 'Save'; btn.className = 'btn-save-supplier'; }
+}
+
+async function saveOneSetting(code) {
+  const termType = document.getElementById('term-type-' + code).value;
+  const termDays = parseInt(document.getElementById('term-days-' + code).value) || 20;
+  const btn = document.getElementById('btn-' + code);
+
+  try {
+    const r = await fetch('/api/supplier-config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ supplier_code: code, term_type: termType, term_days: termDays }),
+    });
+    if (r.ok) {
+      btn.textContent = '✓ Saved'; btn.className = 'btn-save-supplier saved';
+      document.getElementById('settings-status').innerHTML = `<div class="success-msg">✅ Saved terms for supplier ${escapeHtml(code)}</div>`;
+      // Update local state
+      const entry = supplierEntries.find(e => e.code === code);
+      if (entry) { entry.term_type = termType; entry.term_days = termDays; entry.configured = true; }
+      // Remove "(Not Set)" indicator
+      const ns = document.querySelector(`#settings-row-${code} .not-set`);
+      if (ns) ns.remove();
+    } else {
+      const err = await r.json();
+      document.getElementById('settings-status').innerHTML = `<div class="error-msg">❌ ${escapeHtml(err.error || 'Save failed')}</div>`;
+    }
+  } catch(e) {
+    document.getElementById('settings-status').innerHTML = `<div class="error-msg">❌ ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function bulkSaveSettings() {
+  const entries = supplierEntries.map(e => ({
+    code: e.code,
+    label: e.label,
+    term_type: document.getElementById('term-type-' + e.code)?.value || e.term_type,
+    term_days: parseInt(document.getElementById('term-days-' + e.code)?.value) || e.term_days,
+    configured: true,
+  }));
+
+  try {
+    const r = await fetch('/api/supplier-config/bulk', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ suppliers: entries }),
+    });
+    if (r.ok) {
+      document.getElementById('settings-status').innerHTML = `<div class="success-msg">✅ Saved ${entries.length} supplier configs</div>`;
+      // Update local state and UI
+      supplierEntries = entries;
+      document.querySelectorAll('.btn-save-supplier').forEach(btn => {
+        btn.textContent = '✓ Saved'; btn.className = 'btn-save-supplier saved';
+      });
+      document.querySelectorAll('.not-set').forEach(el => el.remove());
+    } else {
+      const err = await r.json();
+      document.getElementById('settings-status').innerHTML = `<div class="error-msg">❌ ${escapeHtml(err.error || 'Save failed')}</div>`;
+    }
+  } catch(e) {
+    document.getElementById('settings-status').innerHTML = `<div class="error-msg">❌ ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function filterSettings() {
+  renderSettings();
+}
+
+// ── Util ──
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+</script>
+</body>
+</html>

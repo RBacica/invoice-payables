@@ -1,0 +1,7 @@
+[server]
+host = "127.0.0.1"
+port = 8080
+output_dir = "payables_output"
+
+[database]
+# connection_string = "server=192.168.1.100,1433;database=Infinity;uid=sa;pwd=your_password;encrypt=false"

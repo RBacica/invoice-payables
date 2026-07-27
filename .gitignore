@@ -1,0 +1,7 @@
+target/
+InvoicePayables-*.zip
+*.exe
+suppliers-config.toml
+.vscode/
+.idea/
+*.swp
