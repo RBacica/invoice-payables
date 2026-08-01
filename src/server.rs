@@ -2,11 +2,8 @@ use actix_web::{web, HttpResponse};
 use serde::Deserialize;
 
 use crate::db::{self, DbPool};
+use crate::paid_ledger::PaidLedger;
 use crate::supplier_config::{SupplierConfigEntry, SupplierConfigManager};
-
-/// Output directory for saved payables reports.
-#[derive(Clone)]
-pub struct OutputDir(pub String);
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(web::resource("/api/suppliers").route(web::get().to(get_suppliers)))
@@ -15,7 +12,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(web::resource("/api/supplier-config").route(web::get().to(get_supplier_config))
                                                       .route(web::post().to(save_supplier_config)))
         .service(web::resource("/api/supplier-config/bulk").route(web::post().to(save_supplier_config_bulk)))
-        .service(web::resource("/api/save").route(web::post().to(save_payables)));
+        .service(web::resource("/api/paid").route(web::get().to(get_paid)))
+        .service(web::resource("/api/pay").route(web::post().to(mark_paid)));
 }
 
 // ── Handlers ───────────────────────────────────────────────────
@@ -103,6 +101,18 @@ struct SaveOneConfig {
     supplier_code: String,
     term_type: String,
     term_days: u16,
+    #[serde(default = "default_order_type")]
+    order_type: String,
+    #[serde(default = "default_payment_type")]
+    payment_type: String,
+}
+
+fn default_order_type() -> String {
+    "Monthly".to_string()
+}
+
+fn default_payment_type() -> String {
+    "DC".to_string()
 }
 
 async fn save_supplier_config(
@@ -112,7 +122,13 @@ async fn save_supplier_config(
     let cfg = supplier_cfg.into_inner();
     let req = body.into_inner();
 
-    match cfg.save_one(&req.supplier_code, &req.term_type, req.term_days) {
+    match cfg.save_one(
+        &req.supplier_code,
+        &req.term_type,
+        req.term_days,
+        &req.order_type,
+        &req.payment_type,
+    ) {
         Ok(_) => HttpResponse::Ok().json(serde_json::json!({ "status": "ok" })),
         Err(e) => {
             eprintln!("Failed to save supplier config: {}", e);
@@ -147,57 +163,56 @@ async fn save_supplier_config_bulk(
     }
 }
 
-// POST /api/save — save the selected payables rows
+// POST /api/pay — mark selected invoices as paid
 #[derive(Deserialize)]
-pub struct SaveRow {
+pub struct PayRow {
     pub branch: String,
     pub supplier_code: String,
     pub invoice_number: String,
-    pub description: String,
-    pub invoice_date: String,
-    pub invoice_amount: f64,
-    pub po_number: String,
-    pub tax_amount: f64,
-    pub due_date: String,
-    pub selected: bool,
+    #[serde(default)]
+    pub label: String,
 }
 
 #[derive(Deserialize)]
-pub struct SaveRequest {
-    pub rows: Vec<SaveRow>,
+pub struct PayRequest {
+    pub rows: Vec<PayRow>,
 }
 
-async fn save_payables(
-    output_dir: web::Data<OutputDir>,
-    body: web::Json<SaveRequest>,
+async fn mark_paid(
+    ledger: web::Data<PaidLedger>,
+    body: web::Json<PayRequest>,
 ) -> HttpResponse {
     let req = body.into_inner();
-    let selected: Vec<SaveRow> = req.rows.into_iter().filter(|r| r.selected).collect();
+    let rows: Vec<PayRow> = req.rows.into_iter().filter(|r| !r.invoice_number.is_empty()).collect();
 
-    if selected.is_empty() {
+    if rows.is_empty() {
         return HttpResponse::BadRequest().json(serde_json::json!({
             "status": "error",
-            "message": "No rows selected to save"
+            "message": "No invoices selected to mark as paid"
         }));
     }
 
-    match db::save_payables_report(&output_dir.0, &selected) {
-        Ok(path) => {
-            let path_str = path.display().to_string();
-            println!("💾 Saved {} payable rows to {}", selected.len(), path_str);
+    match ledger.mark_paid(&rows) {
+        Ok(added) => {
+            println!("✅ Marked {} invoices as paid", added);
             HttpResponse::Ok().json(serde_json::json!({
                 "status": "ok",
-                "message": format!("Saved {} payables", selected.len()),
-                "rows": selected.len(),
-                "file": path_str,
+                "message": format!("Marked {} invoices as paid", added),
+                "rows": added,
             }))
         }
         Err(e) => {
-            eprintln!("Failed to save payables: {}", e);
+            eprintln!("Failed to mark paid: {}", e);
             HttpResponse::InternalServerError().json(serde_json::json!({
                 "status": "error",
-                "message": format!("Failed to save: {}", e)
+                "message": format!("Failed to mark paid: {}", e)
             }))
         }
     }
+}
+
+// GET /api/paid — return the set of paid invoice keys
+async fn get_paid(ledger: web::Data<PaidLedger>) -> HttpResponse {
+    let keys: Vec<String> = ledger.paid_keys().into_iter().collect();
+    HttpResponse::Ok().json(serde_json::json!({ "paid": keys }))
 }

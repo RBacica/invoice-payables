@@ -76,6 +76,13 @@ td input[type=checkbox]{width:18px;height:18px;accent-color:#00cc88;cursor:point
 .due-date.unconfigured{font-style:italic;color:#999}
 .due-date.past{color:#ff6b6b}
 
+/* Paid rows */
+.paid-row{opacity:0.45;background:rgba(0,204,136,0.05)!important}
+.paid-row td{color:#9ad1b0}
+.paid-badge{display:inline-block;background:#00cc88;color:#000;font-size:0.7rem;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:6px;letter-spacing:0.5px}
+.btn-pay{background:linear-gradient(135deg,#00cc88,#00aa66);color:#000}
+.btn-pay:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,204,136,0.3)}
+
 /* Supplier group header */
 .supplier-group-header td{background:#0f2640;padding:10px 12px;font-weight:700;font-size:0.9rem;border-top:2px solid #1a3a5e}
 .supplier-group-header .supplier-name{color:#b388ff}
@@ -168,6 +175,22 @@ td input[type=checkbox]{width:18px;height:18px;accent-color:#00cc88;cursor:point
       <label>Supplier</label>
       <select id="supplier-select"><option value="ALL">All Suppliers</option></select>
     </div>
+    <div class="form-group">
+      <label>Order Type</label>
+      <select id="order-filter" onchange="applyViewFilters()">
+        <option value="ALL">All Order Types</option>
+        <option value="Weekly">Weekly</option>
+        <option value="Monthly">Monthly</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Payment Type</label>
+      <select id="payment-filter" onchange="applyViewFilters()">
+        <option value="ALL">All Payment Types</option>
+        <option value="DC">Direct Credit (DC)</option>
+        <option value="DD">Direct Debit (DD)</option>
+      </select>
+    </div>
     <button class="btn btn-search" onclick="searchInvoices()">🔍 Search</button>
   </div>
 
@@ -178,12 +201,13 @@ td input[type=checkbox]{width:18px;height:18px;accent-color:#00cc88;cursor:point
     <div class="stat"><div class="stat-value" id="stat-total">$0.00</div><div class="stat-label">Total Amount</div></div>
     <div class="stat"><div class="stat-value" id="stat-tax">$0.00</div><div class="stat-label">Total Tax</div></div>
     <div class="stat"><div class="stat-value selected" id="stat-selected">$0.00</div><div class="stat-label">Selected</div></div>
+    <div class="stat"><div class="stat-value" id="stat-paid" style="color:#00cc88">0</div><div class="stat-label">Paid</div></div>
   </div>
 
   <div class="toolbar" id="search-toolbar" style="display:none">
     <button class="btn btn-select" onclick="selectAll()">☑ Select All</button>
     <button class="btn btn-clear" onclick="clearAll()">☐ Clear All</button>
-    <button class="btn btn-export" onclick="exportPayables()">📥 Export Payables</button>
+    <button class="btn btn-pay" onclick="markPaid()">✅ Pay (Mark as Paid)</button>
     <button class="btn btn-print" onclick="printDueReport()">🖨️ Print Due Report</button>
     <label class="group-toggle active" id="group-toggle">
       <input type="checkbox" checked onchange="toggleGroupBy(this)"> Group by Supplier
@@ -216,9 +240,12 @@ td input[type=checkbox]{width:18px;height:18px;accent-color:#00cc88;cursor:point
 <script>
 // ── State ──
 let invoices = [];
+let filteredInvoices = [];
 let selectedSet = new Set();
+let paidSet = new Set();
 let supplierEntries = [];
 let supplierLabelMap = {};
+let supplierConfigMap = {};
 let groupBySupplier = true;
 
 // ── Init ──
@@ -241,6 +268,8 @@ let groupBySupplier = true;
 
   loadBranches();
   loadSuppliers();
+  loadSupplierEntries();
+  loadPaid();
 })();
 
 // ── View Switching ──
@@ -279,6 +308,49 @@ async function loadSuppliers() {
   } catch(e) { console.error('Failed to load suppliers:', e); }
 }
 
+// ── Load Supplier Config (for order/payment filters) ──
+async function loadSupplierEntries() {
+  try {
+    const r = await fetch('/api/supplier-config');
+    supplierEntries = await r.json();
+    supplierConfigMap = {};
+    supplierEntries.forEach(e => {
+      supplierConfigMap[e.code] = {
+        order_type: e.order_type || 'Monthly',
+        payment_type: e.payment_type || 'DC',
+      };
+    });
+  } catch(e) { console.error('Failed to load supplier config:', e); }
+}
+
+// ── Apply Order/Payment client-side filters ──
+function filteredInvoicesFrom(list) {
+  const orderFilter = document.getElementById('order-filter').value;
+  const paymentFilter = document.getElementById('payment-filter').value;
+  return list.filter(inv => {
+    const cfg = supplierConfigMap[inv.supplier_code];
+    const orderType = cfg ? cfg.order_type : 'Monthly';
+    const paymentType = cfg ? cfg.payment_type : 'DC';
+    return (orderFilter === 'ALL' || orderType === orderFilter) &&
+           (paymentFilter === 'ALL' || paymentType === paymentFilter);
+  });
+}
+
+function applyViewFilters() {
+  filteredInvoices = invoices.length === 0 ? [] : filteredInvoicesFrom(invoices);
+  selectedSet = new Set();
+  renderInvoices();
+}
+
+// ── Load Paid Ledger ──
+async function loadPaid() {
+  try {
+    const r = await fetch('/api/paid');
+    const data = await r.json();
+    paidSet = new Set(data.paid || []);
+  } catch(e) { console.error('Failed to load paid ledger:', e); }
+}
+
 // ── Search Invoices ──
 async function searchInvoices() {
   const month = parseInt(document.getElementById('month-select').value);
@@ -304,6 +376,7 @@ async function searchInvoices() {
       throw new Error(err.error || 'Server error');
     }
     invoices = await r.json();
+    filteredInvoices = filteredInvoicesFrom(invoices);
     selectedSet = new Set();
     renderInvoices();
   } catch(e) {
@@ -316,7 +389,7 @@ async function searchInvoices() {
 function renderInvoices() {
   document.getElementById('search-status').innerHTML = '';
 
-  if (invoices.length === 0) {
+  if (filteredInvoices.length === 0) {
     document.getElementById('invoice-table-area').innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>No invoices found for this period</p></div>';
     document.getElementById('summary-bar').style.display = 'none';
     document.getElementById('search-toolbar').style.display = 'none';
@@ -325,7 +398,7 @@ function renderInvoices() {
 
   // Group by supplier_code
   const groups = {};
-  invoices.forEach(inv => {
+  filteredInvoices.forEach(inv => {
     const code = inv.supplier_code;
     if (!groups[code]) groups[code] = [];
     groups[code].push(inv);
@@ -335,11 +408,13 @@ function renderInvoices() {
   document.getElementById('search-toolbar').style.display = 'flex';
 
   // Update stats
-  const total = invoices.reduce((s, i) => s + (i.invoice_amount || 0), 0);
-  const tax = invoices.reduce((s, i) => s + (i.tax_amount || 0), 0);
-  document.getElementById('stat-count').textContent = invoices.length;
+  const total = filteredInvoices.reduce((s, i) => s + (i.invoice_amount || 0), 0);
+  const tax = filteredInvoices.reduce((s, i) => s + (i.tax_amount || 0), 0);
+  const paidCount = filteredInvoices.filter(inv => paidSet.has(invKey(inv))).length;
+  document.getElementById('stat-count').textContent = filteredInvoices.length;
   document.getElementById('stat-total').textContent = '$' + total.toFixed(2);
   document.getElementById('stat-tax').textContent = '$' + tax.toFixed(2);
+  document.getElementById('stat-paid').textContent = paidCount;
   updateSelectedTotal();
 
   // Build table with supplier groups
@@ -356,14 +431,17 @@ function renderInvoices() {
   // Local helper to render a single invoice row
   const addInvoiceRow = (inv) => {
     const key = invKey(inv);
-    const checked = selectedSet.has(key) ? 'checked' : '';
+    const isPaid = paidSet.has(key);
+    const checked = !isPaid && selectedSet.has(key) ? 'checked' : '';
+    const disabled = isPaid ? 'disabled' : '';
     const dueClass = inv.due_date ? (inv.due_date < todayStr() ? 'due-date past' : 'due-date') : 'due-date unconfigured';
     const unconfNote = inv.due_date && !isConfigured(inv.supplier_code) ? ' *' : '';
-    html += `<tr class="${checked ? 'selected-row' : ''}" data-row="${rowIdx}" data-invkey="${escapeHtml(key)}">
-      <td><input type="checkbox" ${checked} onchange="toggleSelect('${escapeHtml(key)}', this)"></td>
+    const paidBadge = isPaid ? '<span class="paid-badge">PAID</span>' : '';
+    html += `<tr class="${checked ? 'selected-row' : ''}${isPaid ? ' paid-row' : ''}" data-row="${rowIdx}" data-invkey="${escapeHtml(key)}">
+      <td><input type="checkbox" ${checked} ${disabled} onchange="toggleSelect('${escapeHtml(key)}', this)"></td>
       <td>${escapeHtml(inv.branch)}</td>
       <td>${escapeHtml(inv.supplier_code)}</td>
-      <td>${escapeHtml(inv.invoice_number)}</td>
+      <td>${escapeHtml(inv.invoice_number)}${paidBadge}</td>
       <td>${escapeHtml(inv.invoice_date ? inv.invoice_date.substring(0,10) : '')}</td>
       <td>${escapeHtml(inv.description)}</td>
       <td class="amount">$${(inv.invoice_amount || 0).toFixed(2)}</td>
@@ -403,7 +481,7 @@ function renderInvoices() {
     });
   } else {
     // ── Flat (ungrouped) ──
-    invoices.forEach(inv => {
+    filteredInvoices.forEach(inv => {
       addInvoiceRow(inv);
     });
   }
@@ -439,9 +517,12 @@ function toggleSelect(key, el) {
 }
 
 function selectAll() {
-  invoices.forEach(inv => selectedSet.add(invKey(inv)));
-  document.querySelectorAll('tbody input[type=checkbox]').forEach(cb => cb.checked = true);
-  document.querySelectorAll('tbody tr').forEach(tr => tr.classList.add('selected-row'));
+  filteredInvoices.forEach(inv => {
+    const key = invKey(inv);
+    if (!paidSet.has(key)) selectedSet.add(key);
+  });
+  document.querySelectorAll('tbody input[type=checkbox]').forEach(cb => { if (!cb.disabled) cb.checked = true; });
+  document.querySelectorAll('tbody tr:not(.paid-row)').forEach(tr => tr.classList.add('selected-row'));
   updateSelectedTotal();
   updateSupplierCheckboxes();
 }
@@ -464,36 +545,38 @@ function isConfigured(supplierCode) {
   return entry ? entry.configured : false;
 }
 
-// ── Export ──
-async function exportPayables() {
-  if (selectedSet.size === 0) { alert('No invoices selected. Check the ones you want to pay and try again.'); return; }
+// ── Mark as Paid ──
+async function markPaid() {
+  if (selectedSet.size === 0) { alert('No invoices selected. Check the ones you want to mark as paid and try again.'); return; }
 
-  const rows = invoices.filter(inv => selectedSet.has(invKey(inv))).map(inv => ({
-    branch: inv.branch,
-    supplier_code: inv.supplier_code,
-    invoice_number: inv.invoice_number,
-    description: inv.description,
-    invoice_date: inv.invoice_date,
-    invoice_amount: inv.invoice_amount,
-    po_number: inv.po_number,
-    tax_amount: inv.tax_amount,
-    due_date: inv.due_date,
-    selected: true,
-  }));
+  const rows = invoices
+    .filter(inv => selectedSet.has(invKey(inv)))
+    .map(inv => ({
+      branch: inv.branch,
+      supplier_code: inv.supplier_code,
+      invoice_number: inv.invoice_number,
+      label: `${inv.branch} | ${supplierLabelMap[inv.supplier_code] || inv.supplier_code} | ${inv.invoice_number}`,
+    }));
+
+  if (!confirm(`Mark ${rows.length} selected invoice(s) as PAID? This writes them to the paid ledger.`)) return;
 
   try {
-    const r = await fetch('/api/save', {
+    const r = await fetch('/api/pay', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ rows }),
     });
     const result = await r.json();
     if (r.ok) {
+      // Update local paid set
+      rows.forEach(row => paidSet.add(`${row.branch}|${row.supplier_code}|${row.invoice_number}`));
+      selectedSet.clear();
       document.getElementById('search-status').innerHTML =
-        `<div class="success-msg">✅ ${escapeHtml(result.message)} — file saved</div>`;
+        `<div class="success-msg">✅ ${escapeHtml(result.message)}</div>`;
+      renderInvoices();
     } else {
       document.getElementById('search-status').innerHTML =
-        `<div class="error-msg">❌ ${escapeHtml(result.message || 'Save failed')}</div>`;
+        `<div class="error-msg">❌ ${escapeHtml(result.message || 'Failed to mark paid')}</div>`;
     }
   } catch(e) {
     document.getElementById('search-status').innerHTML =
@@ -511,9 +594,10 @@ function toggleGroupBy(el) {
 // ── Supplier Select / Deselect All ──
 function toggleSupplierSelect(code, el) {
   const checked = el.checked;
-  const group = invoices.filter(inv => inv.supplier_code === code);
+  const group = filteredInvoices.filter(inv => inv.supplier_code === code);
   group.forEach(inv => {
     const key = invKey(inv);
+    if (paidSet.has(key)) return; // never select paid invoices
     if (checked) selectedSet.add(key);
     else selectedSet.delete(key);
     const row = document.querySelector(`tbody tr[data-invkey="${escapeHtml(key)}"]`);
@@ -529,7 +613,7 @@ function toggleSupplierSelect(code, el) {
 function updateSupplierCheckboxes() {
   // Group invoices by supplier
   const groups = {};
-  invoices.forEach(inv => {
+  filteredInvoices.forEach(inv => {
     if (!groups[inv.supplier_code]) groups[inv.supplier_code] = [];
     groups[inv.supplier_code].push(inv);
   });
@@ -551,11 +635,11 @@ function updateSupplierCheckboxes() {
 
 // ── Print Due Report (grouped by month → supplier) ──
 function printDueReport() {
-  if (invoices.length === 0) { alert('No invoices to print. Search for a month first.'); return; }
+  if (filteredInvoices.length === 0) { alert('No matching invoices to print. Search for a month first.'); return; }
 
   // First group by due month, then by supplier within each month
   const monthGroups = {};
-  invoices.forEach(inv => {
+  filteredInvoices.forEach(inv => {
     const due = inv.due_date || 'No Date';
     const monthKey = due.substring(0, 7); // YYYY-MM
     if (!monthGroups[monthKey]) monthGroups[monthKey] = {};
@@ -567,7 +651,13 @@ function printDueReport() {
   const sortedMonths = Object.keys(monthGroups).sort();
 
   let html = '<h1>📋 Payables Due Report</h1>';
-  html += `<p class="print-subtitle">${invoices.length} invoices • Generated ${new Date().toLocaleDateString('en-NZ', { year: 'numeric', month: 'long', day: 'numeric' })}</p>`;
+  const orderFilter = document.getElementById('order-filter').value;
+  const paymentFilter = document.getElementById('payment-filter').value;
+  let filterNote = '';
+  if (orderFilter !== 'ALL' || paymentFilter !== 'ALL') {
+    filterNote = ` • Filter: ${orderFilter === 'ALL' ? 'All' : orderFilter} order / ${paymentFilter === 'ALL' ? 'All' : paymentFilter} payment`;
+  }
+  html += `<p class="print-subtitle">${filteredInvoices.length} invoices${filterNote} • Generated ${new Date().toLocaleDateString('en-NZ', { year: 'numeric', month: 'long', day: 'numeric' })}</p>`;
 
   sortedMonths.forEach(monthKey => {
     const supplierGroups = monthGroups[monthKey];
@@ -634,8 +724,8 @@ function printDueReport() {
   });
 
   // Grand total
-  const grandTotal = invoices.reduce((s, i) => s + (i.invoice_amount || 0), 0);
-  const grandCombined = invoices.reduce((s, i) => s + (i.invoice_amount || 0) + (i.tax_amount || 0), 0);
+  const grandTotal = filteredInvoices.reduce((s, i) => s + (i.invoice_amount || 0), 0);
+  const grandCombined = filteredInvoices.reduce((s, i) => s + (i.invoice_amount || 0) + (i.tax_amount || 0), 0);
   html += `<div class="print-grand-total">Grand Total: $${grandTotal.toFixed(2)} (inc Tax: $${grandCombined.toFixed(2)})</div>`;
 
   document.getElementById('print-content').innerHTML = html;
@@ -672,7 +762,7 @@ function renderSettings() {
   document.getElementById('btn-bulk-save').style.display = supplierEntries.length > 0 ? 'inline-block' : 'none';
 
   let html = '<div class="table-wrapper"><table class="settings-table"><thead><tr>' +
-    '<th>Code</th><th>Supplier Name</th><th>Term Type</th><th>Days</th><th>Actions</th>' +
+    '<th>Code</th><th>Supplier Name</th><th>Order Type</th><th>Payment Type</th><th>Term Type</th><th>Days</th><th>Actions</th>' +
     '</tr></thead><tbody>';
 
   filtered.forEach(entry => {
@@ -681,6 +771,18 @@ function renderSettings() {
     html += `<tr id="settings-row-${entry.code}">
       <td><strong>${escapeHtml(entry.code)}</strong></td>
       <td>${escapeHtml(entry.label)}</td>
+      <td>
+        <select id="order-type-${entry.code}" onchange="markUnsaved('${entry.code}')">
+          <option value="Weekly" ${entry.order_type === 'Weekly' ? 'selected' : ''}>Weekly</option>
+          <option value="Monthly" ${entry.order_type === 'Monthly' ? 'selected' : ''}>Monthly</option>
+        </select>
+      </td>
+      <td>
+        <select id="payment-type-${entry.code}" onchange="markUnsaved('${entry.code}')">
+          <option value="DC" ${entry.payment_type === 'DC' ? 'selected' : ''}>Direct Credit (DC)</option>
+          <option value="DD" ${entry.payment_type === 'DD' ? 'selected' : ''}>Direct Debit (DD)</option>
+        </select>
+      </td>
       <td>
         <select id="term-type-${entry.code}" onchange="markUnsaved('${entry.code}')">
           <option value="EOM" ${entry.term_type === 'EOM' ? 'selected' : ''}>End of Month</option>
@@ -705,20 +807,22 @@ function markUnsaved(code) {
 async function saveOneSetting(code) {
   const termType = document.getElementById('term-type-' + code).value;
   const termDays = parseInt(document.getElementById('term-days-' + code).value) || 20;
+  const orderType = document.getElementById('order-type-' + code).value;
+  const paymentType = document.getElementById('payment-type-' + code).value;
   const btn = document.getElementById('btn-' + code);
 
   try {
     const r = await fetch('/api/supplier-config', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ supplier_code: code, term_type: termType, term_days: termDays }),
+      body: JSON.stringify({ supplier_code: code, term_type: termType, term_days: termDays, order_type: orderType, payment_type: paymentType }),
     });
     if (r.ok) {
       btn.textContent = '✓ Saved'; btn.className = 'btn-save-supplier saved';
       document.getElementById('settings-status').innerHTML = `<div class="success-msg">✅ Saved terms for supplier ${escapeHtml(code)}</div>`;
       // Update local state
       const entry = supplierEntries.find(e => e.code === code);
-      if (entry) { entry.term_type = termType; entry.term_days = termDays; entry.configured = true; }
+      if (entry) { entry.term_type = termType; entry.term_days = termDays; entry.order_type = orderType; entry.payment_type = paymentType; entry.configured = true; }
       // Remove "(Not Set)" indicator
       const ns = document.querySelector(`#settings-row-${code} .not-set`);
       if (ns) ns.remove();
@@ -737,6 +841,8 @@ async function bulkSaveSettings() {
     label: e.label,
     term_type: document.getElementById('term-type-' + e.code)?.value || e.term_type,
     term_days: parseInt(document.getElementById('term-days-' + e.code)?.value) || e.term_days,
+    order_type: document.getElementById('order-type-' + e.code)?.value || e.order_type,
+    payment_type: document.getElementById('payment-type-' + e.code)?.value || e.payment_type,
     configured: true,
   }));
 

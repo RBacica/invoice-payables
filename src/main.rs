@@ -1,5 +1,6 @@
 mod config;
 mod db;
+mod paid_ledger;
 mod server;
 mod supplier_config;
 
@@ -65,14 +66,23 @@ async fn run() -> std::io::Result<()> {
         )
     })?;
 
+    // 4) Load / initialise paid ledger
+    let paid_ledger = paid_ledger::PaidLedger::new().map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to initialise paid ledger: {}", e),
+        )
+    })?;
+
     println!("🚀 Invoice Payables starting...");
     println!("   📡 Listening on: http://{}:{}", cfg.host, cfg.port);
     println!("   🗄️  Database: configured");
     println!("   💾 Save directory: {}", cfg.output_dir);
     println!("   📋 Supplier config: {} suppliers loaded", supplier_cfg.count());
+    println!("   ✅ Paid ledger: {} invoices marked paid", paid_ledger.count());
 
     let pool_data = web::Data::new(pool);
-    let output_dir = web::Data::new(server::OutputDir(cfg.output_dir.clone()));
+    let paid_ledger_data = web::Data::new(paid_ledger);
     let supplier_cfg_data = web::Data::new(supplier_cfg);
 
     println!("✅ Server ready. Open the address above in a browser.");
@@ -82,7 +92,7 @@ async fn run() -> std::io::Result<()> {
         App::new()
             .wrap(Logger::default())
             .app_data(pool_data.clone())
-            .app_data(output_dir.clone())
+            .app_data(paid_ledger_data.clone())
             .app_data(supplier_cfg_data.clone())
             .configure(server::configure)
             .service(Files::new("/", "web").index_file("index.html"))

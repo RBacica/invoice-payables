@@ -19,6 +19,36 @@ impl Default for TermType {
     }
 }
 
+/// Order fulfilment frequency
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum OrderType {
+    #[serde(rename = "Weekly")]
+    Weekly,
+    #[serde(rename = "Monthly")]
+    Monthly,
+}
+
+impl Default for OrderType {
+    fn default() -> Self {
+        OrderType::Monthly
+    }
+}
+
+/// Supplier payment method
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum PaymentType {
+    #[serde(rename = "DC")]
+    DirectCredit,
+    #[serde(rename = "DD")]
+    DirectDebit,
+}
+
+impl Default for PaymentType {
+    fn default() -> Self {
+        PaymentType::DirectCredit
+    }
+}
+
 /// Payment terms for a single supplier, as stored in the config file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TermConfig {
@@ -26,6 +56,10 @@ pub struct TermConfig {
     pub term_type: TermType,
     #[serde(default = "default_days")]
     pub term_days: u16,
+    #[serde(default)]
+    pub order_type: OrderType,
+    #[serde(default)]
+    pub payment_type: PaymentType,
     #[serde(default)]
     pub configured: bool,
 }
@@ -44,6 +78,8 @@ pub struct SupplierConfigEntry {
     pub label: String,
     pub term_type: String,
     pub term_days: u16,
+    pub order_type: String,
+    pub payment_type: String,
     pub configured: bool,
 }
 
@@ -91,6 +127,8 @@ impl SupplierConfigManager {
                     TermConfig {
                         term_type: TermType::Eom,
                         term_days: 20,
+                        order_type: OrderType::Monthly,
+                        payment_type: PaymentType::DirectCredit,
                         configured: false,
                     },
                 );
@@ -116,6 +154,14 @@ impl SupplierConfigManager {
                         _ => TermType::Eom,
                     },
                     term_days: entry.term_days,
+                    order_type: match entry.order_type.to_lowercase().as_str() {
+                        "weekly" => OrderType::Weekly,
+                        _ => OrderType::Monthly,
+                    },
+                    payment_type: match entry.payment_type.to_lowercase().as_str() {
+                        "dd" => PaymentType::DirectDebit,
+                        _ => PaymentType::DirectCredit,
+                    },
                     configured: true,
                 },
             );
@@ -126,7 +172,14 @@ impl SupplierConfigManager {
     }
 
     /// Save a single supplier's terms. Takes &self (interior mutability).
-    pub fn save_one(&self, code: &str, term_type: &str, term_days: u16) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save_one(
+        &self,
+        code: &str,
+        term_type: &str,
+        term_days: u16,
+        order_type: &str,
+        payment_type: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut map = self.config_map.write().map_err(|e| format!("RwLock poisoned: {}", e))?;
         map.insert(
             code.to_string(),
@@ -136,6 +189,14 @@ impl SupplierConfigManager {
                     _ => TermType::Eom,
                 },
                 term_days,
+                order_type: match order_type.to_lowercase().as_str() {
+                    "weekly" => OrderType::Weekly,
+                    _ => OrderType::Monthly,
+                },
+                payment_type: match payment_type.to_lowercase().as_str() {
+                    "dd" => PaymentType::DirectDebit,
+                    _ => PaymentType::DirectCredit,
+                },
                 configured: true,
             },
         );
@@ -151,22 +212,32 @@ impl SupplierConfigManager {
             .iter()
             .map(|s| {
                 let cfg = map.get(&s.code);
-                let (term_type, term_days, configured) = match cfg {
+                let (term_type, term_days, order_type, payment_type, configured) = match cfg {
                     Some(c) => (
                         match c.term_type {
                             TermType::Eom => "EOM".to_string(),
                             TermType::NetDays => "NetDays".to_string(),
                         },
                         c.term_days,
+                        match c.order_type {
+                            OrderType::Weekly => "Weekly".to_string(),
+                            OrderType::Monthly => "Monthly".to_string(),
+                        },
+                        match c.payment_type {
+                            PaymentType::DirectCredit => "DC".to_string(),
+                            PaymentType::DirectDebit => "DD".to_string(),
+                        },
                         c.configured,
                     ),
-                    None => ("EOM".to_string(), 20u16, false),
+                    None => ("EOM".to_string(), 20u16, "Monthly".to_string(), "DC".to_string(), false),
                 };
                 SupplierConfigEntry {
                     code: s.code.clone(),
                     label: s.label.clone(),
                     term_type,
                     term_days,
+                    order_type,
+                    payment_type,
                     configured,
                 }
             })
@@ -183,6 +254,8 @@ impl SupplierConfigManager {
             .unwrap_or_else(|| TermConfig {
                 term_type: TermType::Eom,
                 term_days: 20,
+                order_type: OrderType::Monthly,
+                payment_type: PaymentType::DirectCredit,
                 configured: false,
             });
         drop(map); // release read lock before heavy work
