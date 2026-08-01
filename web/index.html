@@ -25,6 +25,8 @@ h1{text-align:center;color:#00d4ff;margin-bottom:4px;font-size:1.8rem;font-weigh
 /* Search Panel */
 .search-panel{background:#16213e;border-radius:0 0 12px 12px;padding:20px;margin-bottom:20px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;border:1px solid #0f3460;border-top:none;box-shadow:0 4px 15px rgba(0,0,0,0.3)}
 .form-group{display:flex;flex-direction:column;gap:4px;min-width:160px;flex:1}
+.form-group.form-group-sm{flex:0.5 1 130px;min-width:110px}
+.form-group.form-group-lg{flex:2 1 240px;min-width:180px}
 .form-group label{font-size:0.75rem;color:#aaa;text-transform:uppercase;letter-spacing:1px;font-weight:600}
 .form-group select,.form-group input{padding:8px 12px;border-radius:8px;border:1px solid #0f3460;background:#1a1a2e;color:#e0e0e0;font-size:0.9rem;cursor:pointer;transition:border-color 0.2s}
 .form-group select:focus,.form-group input:focus{outline:none;border-color:#00d4ff}
@@ -159,15 +161,15 @@ td input[type=checkbox]{width:18px;height:18px;accent-color:#00cc88;cursor:point
 <!-- ─── INVOICE SEARCH ─── -->
 <div id="panel-search" class="panel active">
   <div class="search-panel">
-    <div class="form-group">
+    <div class="form-group form-group-sm">
       <label>Month</label>
       <select id="month-select"><option value="1">January</option><option value="2">February</option><option value="3">March</option><option value="4">April</option><option value="5">May</option><option value="6">June</option><option value="7">July</option><option value="8">August</option><option value="9">September</option><option value="10">October</option><option value="11">November</option><option value="12">December</option></select>
     </div>
-    <div class="form-group">
+    <div class="form-group form-group-sm">
       <label>Year</label>
       <select id="year-select"></select>
     </div>
-    <div class="form-group">
+    <div class="form-group form-group-lg">
       <label>Branch</label>
       <select id="branch-select"><option value="ALL">All Branches</option></select>
     </div>
